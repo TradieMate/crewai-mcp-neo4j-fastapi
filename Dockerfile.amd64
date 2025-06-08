@@ -43,11 +43,11 @@ RUN chown -R tradiemate:tradiemate /app
 USER tradiemate
 
 # Expose port
-EXPOSE 12000
+EXPOSE 10000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:12000/health || exit 1
+    CMD curl -f http://localhost:10000/health || exit 1
 
 # Environment variables
 ENV PYTHONPATH=/app
@@ -55,4 +55,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Run the application
-CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "12000", "--workers", "1"]
+CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000", "--workers", "1"]
