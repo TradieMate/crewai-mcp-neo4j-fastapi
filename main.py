@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from cai import run_crew_query
 import uvicorn
@@ -199,6 +200,72 @@ async def global_exception_handler(request: Request, exc: Exception):
             timestamp=datetime.now().isoformat()
         ).dict()
     )
+
+# Mount static files for frontend (if built frontend exists)
+frontend_static_path = "/app/frontend/.next/static"
+frontend_public_path = "/app/frontend/public"
+
+# Mount static assets
+if os.path.exists(frontend_static_path):
+    app.mount("/_next/static", StaticFiles(directory=frontend_static_path), name="next-static")
+
+if os.path.exists(frontend_public_path):
+    app.mount("/public", StaticFiles(directory=frontend_public_path), name="public")
+
+# Check if frontend server.js exists (Next.js standalone)
+frontend_server_path = "/app/frontend/server.js"
+if os.path.exists(frontend_server_path):
+    import subprocess
+    import threading
+    
+    def start_frontend_server():
+        """Start the Next.js frontend server on a different port"""
+        try:
+            subprocess.run([
+                "node", frontend_server_path
+            ], cwd="/app/frontend", env={
+                **os.environ,
+                "PORT": "3000",
+                "HOSTNAME": "0.0.0.0"
+            })
+        except Exception as e:
+            logger.error(f"Failed to start frontend server: {e}")
+    
+    # Start frontend server in background thread
+    frontend_thread = threading.Thread(target=start_frontend_server, daemon=True)
+    frontend_thread.start()
+    
+    # Proxy frontend requests
+    import httpx
+    
+    @app.get("/")
+    async def serve_frontend():
+        """Proxy to frontend server"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("http://localhost:3000/")
+                return response.content
+        except Exception:
+            return {"message": "TradieMate Marketing Analytics API", "docs": "/docs", "frontend": "unavailable"}
+    
+    @app.get("/{path:path}")
+    async def serve_frontend_routes(path: str):
+        """Proxy frontend routes to Next.js server"""
+        # Skip API routes
+        if path.startswith("api/") or path.startswith("docs") or path.startswith("health") or path.startswith("crewai"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://localhost:3000/{path}")
+                return response.content
+        except Exception:
+            raise HTTPException(status_code=404, detail="Frontend route not found")
+else:
+    # Fallback if no frontend is available
+    @app.get("/")
+    async def api_info():
+        return {"message": "TradieMate Marketing Analytics API", "docs": "/docs", "frontend": "not_available"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 12000))

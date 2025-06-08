@@ -1,4 +1,15 @@
-# TradieMate Marketing Analytics - AMD64/Linux Optimized Backend
+# TradieMate Marketing Analytics - Render Optimized (Backend + Frontend)
+FROM --platform=linux/amd64 node:18-slim AS frontend-builder
+
+# Build frontend
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# Backend stage
 FROM --platform=linux/amd64 python:3.11.11-slim
 
 # Set platform explicitly
@@ -33,9 +44,14 @@ RUN poetry install --no-dev --no-root --no-interaction --no-ansi
 RUN pip install --no-cache-dir uv
 
 # Copy application code
-COPY main.py cai.py ./
-COPY agents/ ./agents/
-COPY tools/ ./tools/
+COPY main.py cai.py logging_config.py security_config.py ./
+COPY agents/ ./agents/ 2>/dev/null || true
+COPY tools/ ./tools/ 2>/dev/null || true
+
+# Copy built frontend from frontend-builder stage
+COPY --from=frontend-builder /frontend/.next/standalone ./frontend/
+COPY --from=frontend-builder /frontend/.next/static ./frontend/.next/static
+COPY --from=frontend-builder /frontend/public ./frontend/public
 
 # Create non-root user for security
 RUN groupadd -r tradiemate && useradd -r -g tradiemate tradiemate

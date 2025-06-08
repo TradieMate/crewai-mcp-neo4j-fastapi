@@ -1,0 +1,51 @@
+# Render Deployment - Single Service Configuration
+# This is optimized for Render.com deployment where everything runs on port 10000
+version: '3.8'
+
+services:
+  # TradieMate Full Stack - Render Optimized
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    container_name: tradie-render
+    ports:
+      - "10000:10000"
+    environment:
+      # Load from .env file
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - PORT=${PORT:-10000}
+      - HOST=${HOST:-0.0.0.0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # Required API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      
+      # Required Neo4j Configuration (use hosted Neo4j)
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      
+      # Security Configuration
+      - API_KEYS=${API_KEYS}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-3600}
+      
+      # Optional API Keys
+      - CREWAI_API_KEY=${CREWAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      
+      # Python Configuration
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
