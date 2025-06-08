@@ -1,0 +1,155 @@
+# TradieMate Marketing Analytics - All-in-One Dockerfile
+# This builds both frontend and backend in a single container
+# For production, use docker-compose.full-stack.yml instead
+
+FROM node:18-alpine AS frontend-builder
+
+# Build Frontend
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci --only=production
+
+COPY frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+RUN npm run build
+
+# Backend with Frontend
+FROM python:3.11.11-slim AS production
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    nginx \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js for frontend
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
+
+# Set working directory
+WORKDIR /app
+
+# Install Poetry for backend
+RUN pip install poetry
+
+# Copy and install backend dependencies
+COPY pyproject.toml poetry.lock ./
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev
+
+# Install uvx for MCP tools
+RUN pip install uv
+
+# Copy backend code
+COPY main.py cai.py ./
+COPY agents/ ./agents/
+COPY tools/ ./tools/
+
+# Copy built frontend
+COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend/
+COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
+COPY --from=frontend-builder /app/frontend/public /app/frontend/public
+
+# Configure Nginx
+COPY <<EOF /etc/nginx/sites-available/default
+server {
+    listen 80;
+    server_name localhost;
+
+    # Frontend
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://localhost:12000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+# Configure Supervisor
+COPY <<EOF /etc/supervisor/conf.d/tradiemate.conf
+[supervisord]
+nodaemon=true
+user=root
+
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/nginx.err.log
+stdout_logfile=/var/log/nginx.out.log
+
+[program:backend]
+command=poetry run uvicorn main:app --host 0.0.0.0 --port 12000
+directory=/app
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/backend.err.log
+stdout_logfile=/var/log/backend.out.log
+environment=PYTHONPATH="/app"
+
+[program:frontend]
+command=node server.js
+directory=/app/frontend
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/frontend.err.log
+stdout_logfile=/var/log/frontend.out.log
+environment=NODE_ENV="production",PORT="3000",HOSTNAME="0.0.0.0"
+EOF
+
+# Create startup script
+COPY <<EOF /app/start.sh
+#!/bin/bash
+set -e
+
+echo "🚀 Starting TradieMate Marketing Analytics Platform..."
+
+# Wait for external services (Neo4j, Supabase) if needed
+if [ ! -z "\$NEO4J_URI" ]; then
+    echo "⏳ Waiting for Neo4j to be ready..."
+    until curl -f \${NEO4J_URI/neo4j/http}:7474 > /dev/null 2>&1; do
+        echo "Neo4j is unavailable - sleeping"
+        sleep 2
+    done
+    echo "✅ Neo4j is ready!"
+fi
+
+# Start all services with supervisor
+echo "🎯 Starting all services..."
+exec /usr/bin/supervisord -c /etc/supervisor/conf.d/tradiemate.conf
+EOF
+
+RUN chmod +x /app/start.sh
+
+# Expose ports
+EXPOSE 80 3000 12000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost/api/health && curl -f http://localhost:12000/health || exit 1
+
+# Environment variables
+ENV NODE_ENV=production
+ENV PYTHONPATH=/app
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Start the platform
+CMD ["/app/start.sh"]
