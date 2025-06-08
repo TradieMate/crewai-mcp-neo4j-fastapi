@@ -6,7 +6,7 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build && npm run export
+RUN npm run build
 
 # Main application
 FROM --platform=linux/amd64 python:3.11.11-slim
