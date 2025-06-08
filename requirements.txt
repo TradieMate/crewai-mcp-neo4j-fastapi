@@ -1,0 +1,10 @@
+# Production requirements generated from pyproject.toml
+# Run: poetry export -f requirements.txt --output requirements.txt --without-hashes
+
+uvicorn==0.34.3
+crewai==0.121.1
+crewai-tools[mcp]==0.46.0
+pydantic==2.11.5
+fastapi==0.115.12
+python-dotenv==1.0.0
+uv==0.5.0
