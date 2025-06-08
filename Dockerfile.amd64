@@ -1,0 +1,58 @@
+# TradieMate Marketing Analytics - AMD64/Linux Optimized Backend
+FROM --platform=linux/amd64 python:3.11.11-slim
+
+# Set platform explicitly
+ENV TARGETPLATFORM=linux/amd64
+ENV BUILDPLATFORM=linux/amd64
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for AMD64
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install --no-cache-dir poetry
+
+# Copy poetry files
+COPY pyproject.toml poetry.lock ./
+
+# Configure poetry for production
+RUN poetry config virtualenvs.create false \
+    && poetry config virtualenvs.in-project false
+
+# Install dependencies with platform-specific optimizations
+RUN poetry install --no-dev --no-interaction --no-ansi
+
+# Install uvx for MCP tools
+RUN pip install --no-cache-dir uv
+
+# Copy application code
+COPY main.py cai.py ./
+COPY agents/ ./agents/
+COPY tools/ ./tools/
+
+# Create non-root user for security
+RUN groupadd -r tradiemate && useradd -r -g tradiemate tradiemate
+RUN chown -R tradiemate:tradiemate /app
+USER tradiemate
+
+# Expose port
+EXPOSE 12000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:12000/health || exit 1
+
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Run the application
+CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "12000", "--workers", "1"]
