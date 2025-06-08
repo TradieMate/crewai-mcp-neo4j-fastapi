@@ -1,60 +1,58 @@
-# Production Dockerfile for TradieMate Marketing Analytics Platform
-FROM python:3.11.11-slim
+# TradieMate Marketing Analytics - AMD64/Linux Optimized Backend
+FROM --platform=linux/amd64 python:3.11.11-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Set platform explicitly
+ENV TARGETPLATFORM=linux/amd64
+ENV BUILDPLATFORM=linux/amd64
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for AMD64
 RUN apt-get update && apt-get install -y \
     curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-RUN pip install poetry==1.7.1
+RUN pip install --no-cache-dir poetry
 
 # Copy poetry files
 COPY pyproject.toml poetry.lock ./
 
-# Configure poetry
-RUN poetry config virtualenvs.create false
+# Configure poetry for production
+RUN poetry config virtualenvs.create false \
+    && poetry config virtualenvs.in-project false
 
-# Install dependencies (production only)
-RUN poetry install --only=main --no-dev
+# Install dependencies with platform-specific optimizations
+RUN poetry install --no-dev --no-root --no-interaction --no-ansi
 
 # Install uvx for MCP tools
-RUN pip install uv==0.5.0
-
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+RUN pip install --no-cache-dir uv
 
 # Copy application code
-COPY --chown=appuser:appuser . .
+COPY main.py cai.py ./
+COPY agents/ ./agents/
+COPY tools/ ./tools/
 
-# Switch to non-root user
-USER appuser
+# Create non-root user for security
+RUN groupadd -r tradiemate && useradd -r -g tradiemate tradiemate
+RUN chown -R tradiemate:tradiemate /app
+USER tradiemate
 
 # Expose port
-EXPOSE 12000
+EXPOSE 10000
 
-# Health check with improved reliability
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:12000/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:10000/health || exit 1
 
-# Production command with optimized settings
-CMD ["uvicorn", "main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "12000", \
-     "--workers", "1", \
-     "--log-level", "info", \
-     "--access-log", \
-     "--no-use-colors"]
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Run the application
+CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000", "--workers", "1"]

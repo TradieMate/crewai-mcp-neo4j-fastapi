@@ -58,7 +58,7 @@ print_status "Building AMD64-optimized images..."
 print_status "Building backend image (AMD64)..."
 docker buildx build \
     --platform linux/amd64 \
-    --file Dockerfile.amd64 \
+    --file Dockerfile \
     --tag tradiemate-backend:amd64 \
     --tag tradiemate-backend:latest-amd64 \
     --load \
@@ -75,7 +75,7 @@ fi
 print_status "Building frontend image (AMD64)..."
 docker buildx build \
     --platform linux/amd64 \
-    --file frontend/Dockerfile.amd64 \
+    --file frontend/Dockerfile \
     --tag tradiemate-frontend:amd64 \
     --tag tradiemate-frontend:latest-amd64 \
     --load \
@@ -108,7 +108,7 @@ print_success "All AMD64 images built successfully!"
 
 echo ""
 echo "🚀 To run the complete platform:"
-echo "   docker-compose -f docker-compose.amd64.yml up -d"
+echo "   docker-compose up -d"
 echo ""
 echo "🌐 Access points:"
 echo "   Frontend: http://localhost:12001"
