@@ -9,7 +9,8 @@ const withPWA = require("next-pwa")({
 module.exports = withBundleAnalyzer(
   withPWA({
     reactStrictMode: true,
-    output: 'standalone',
+    output: 'export',
+    trailingSlash: true,
     images: {
       remotePatterns: [
         {
